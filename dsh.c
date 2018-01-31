@@ -69,6 +69,8 @@ void spawn_job(job_t *j, bool fg)
             new_child(j, p, fg);
             
 	    /* YOUR CODE HERE?  Child-side code for new process. */
+            execvp(*p->argv, p->argv);
+
             perror("New child should have done an exec");
             exit(EXIT_FAILURE);  /* NOT REACHED */
             break;    /* NOT REACHED */
@@ -79,6 +81,7 @@ void spawn_job(job_t *j, bool fg)
             set_child_pgid(j, p);
 
             /* YOUR CODE HERE?  Parent-side code for new process.  */
+            wait(NULL);
           }
 
             /* YOUR CODE HERE?  Parent-side code for new job.*/
@@ -132,6 +135,20 @@ char* promptmsg()
 	return "dsh$ ";
 }
 
+void run_job(job_t* j)
+{
+    // Suppose only one process
+    process_t* p = j->first_process;
+    if (! builtin_cmd(j, p->argc, p->argv)) {
+        fprintf(stdout, "%s\n", *p->argv);
+        if (j->bg) {
+            spawn_job(j, false);
+        } else {
+            spawn_job(j, true);
+        }        
+    } 
+}
+
 int main() 
 {
 
@@ -161,5 +178,8 @@ int main()
             /* spawn_job(j,true) */
             /* else */
             /* spawn_job(j,false) */
+        for (job_t* ji = j; ji != NULL; ji = ji->next) {
+            run_job(ji);
+        }
     }
 }
