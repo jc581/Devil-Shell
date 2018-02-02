@@ -4,6 +4,9 @@ void seize_tty(pid_t callingprocess_pgid); /* Grab control of the terminal for t
 void continue_job(job_t *j); /* resume a stopped job */
 void spawn_job(job_t *j, bool fg); /* spawn a new job */
 
+job_t* first_j = NULL;
+job_t* last_j = NULL;
+
 /* Sets the process group id for a given job and process */
 int set_child_pgid(job_t *j, process_t *p)
 {
@@ -57,37 +60,50 @@ void spawn_job(job_t *j, bool fg)
 
 	  /* YOUR CODE HERE? */
 	  /* Builtin commands are already taken care earlier */
-	  
 	  switch (pid = fork()) {
 
-          case -1: /* fork failure */
-            perror("fork");
-            exit(EXIT_FAILURE);
+      case -1: /* fork failure */
+        perror("fork");
+        exit(EXIT_FAILURE);
 
-          case 0: /* child process  */
-            p->pid = getpid();	    
-            new_child(j, p, fg);
-            
-	    /* YOUR CODE HERE?  Child-side code for new process. */
-            execvp(*p->argv, p->argv);
+      case 0: /* child process  */
+        p->pid = getpid();	    
+        new_child(j, p, fg);
+        
+    /* YOUR CODE HERE?  Child-side code for new process. */
+        execvp(*p->argv, p->argv);
 
-            perror("New child should have done an exec");
-            exit(EXIT_FAILURE);  /* NOT REACHED */
-            break;    /* NOT REACHED */
+        perror("New child should have done an exec");
+        exit(EXIT_FAILURE);  /* NOT REACHED */
+        break;    /* NOT REACHED */
 
-          default: /* parent */
-            /* establish child process group */
-            p->pid = pid;
-            set_child_pgid(j, p);
+      default: /* parent */
+        /* establish child process group */
+        p->pid = pid;
+        set_child_pgid(j, p);
 
-            /* YOUR CODE HERE?  Parent-side code for new process.  */
-            wait(NULL);
-          }
+        /* YOUR CODE HERE?  Parent-side code for new process.  */
+        if (p == j->first_process) {
+          fprintf(stdout, "%d(Lanuched): %s\n", j->pgid, j->commandinfo);
+        }
+    }
+  }
+  if (fg) {
+    pid_t t;
+    int status;
+    while ((t = wait(&status)) > 0) {
+      for (p = j->first_process; p; p = p->next) {
+        if (p->pid == t) {
+          p->status = status;
+          p->completed = true;
+          break;
+        }
+      }
+    }
+  }
 
             /* YOUR CODE HERE?  Parent-side code for new job.*/
-	    seize_tty(getpid()); // assign the terminal back to dsh
-
-	}
+  seize_tty(getpid()); // assign the terminal back to dsh
 }
 
 /* Sends SIGCONT signal to wake up the blocked job */
@@ -95,6 +111,35 @@ void continue_job(job_t *j)
 {
      if(kill(-j->pgid, SIGCONT) < 0)
           perror("kill(SIGCONT)");
+}
+
+void brief_print_job(job_t* first_job) {
+  job_t* j = first_job;
+  char* running_status[3] = {"completed", "stopped", "running"};
+  while (j) {
+    bool completed = job_is_completed(j);
+    bool stopped = job_is_stopped(j);
+    fprintf(stdout, "%d(%s) ", j->pgid, running_status[!stopped + !completed]);
+    fprintf(stdout, "%s\n", j->commandinfo);
+    j = j->next;
+  }
+}
+
+void delete_completed_job() {
+  job_t* j;
+  job_t* j_next;
+  for(j = first_j; j;) {
+    j_next = j->next;
+    if(job_is_completed(j)) {
+      delete_job(j, first_j);
+    }
+    j = j_next;
+  }
+}
+
+void list_jobs() {
+  brief_print_job(first_j);
+  delete_completed_job();
 }
 
 
@@ -108,22 +153,34 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
 	    /* check whether the cmd is a built in command
         */
 
+        job_t* j = last_job;
         if (!strcmp(argv[0], "quit")) {
             /* Your code here */
             exit(EXIT_SUCCESS);
-	}
+	      }
         else if (!strcmp("jobs", argv[0])) {
             /* Your code here */
+            delete_job(j, first_j);
+            list_jobs();
             return true;
         }
-	else if (!strcmp("cd", argv[0])) {
+        else if (!strcmp("cd", argv[0])) {
             /* Your code here */
+
+            delete_job(j, first_j);
+            return true;
         }
         else if (!strcmp("bg", argv[0])) {
             /* Your code here */
+            delete_job(j, first_j);
+            return true;
         }
         else if (!strcmp("fg", argv[0])) {
             /* Your code here */
+            pid_t jid = (pid_t)atoi(argv[1]);
+            seize_tty(jid); 
+            delete_job(j, first_j);
+            return true;
         }
         return false;       /* not a builtin command */
 }
@@ -132,7 +189,9 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
 char* promptmsg() 
 {
     /* Modify this to include pid */
-	return "dsh$ ";
+	static char buffer[20];
+	sprintf(buffer, "dsh-%d$ ", getpid());
+	return buffer;
 }
 
 void run_job(job_t* j)
@@ -140,13 +199,21 @@ void run_job(job_t* j)
     // Suppose only one process
     process_t* p = j->first_process;
     if (! builtin_cmd(j, p->argc, p->argv)) {
-        fprintf(stdout, "%s\n", *p->argv);
         if (j->bg) {
             spawn_job(j, false);
         } else {
             spawn_job(j, true);
         }        
     } 
+}
+
+void append_jobs(job_t* j) {
+  if (first_j == NULL) {
+    first_j = j;
+  } else {
+    last_j = find_last_job(first_j);
+    last_j->next = j;
+  }
 }
 
 int main() 
@@ -156,19 +223,19 @@ int main()
 	DEBUG("Successfully initialized\n");
 
 	while(1) {
-        job_t *j = NULL;
+    job_t *j = NULL;
 		if(!(j = readcmdline(promptmsg()))) {
 			if (feof(stdin)) { /* End of file (ctrl-d) */
 				fflush(stdout);
 				printf("\n");
 				exit(EXIT_SUCCESS);
-           		}
+      }
 			continue; /* NOOP; user entered return or spaces with return */
 		}
 
         /* Only for debugging purposes to show parser output; turn off in the
          * final code */
-        if(PRINT_INFO) print_job(j);
+        //if(PRINT_INFO) print_job(j);
 
         /* Your code goes here */
         /* You need to loop through jobs list since a command line can contain ;*/
@@ -178,8 +245,10 @@ int main()
             /* spawn_job(j,true) */
             /* else */
             /* spawn_job(j,false) */
+        append_jobs(j);
         for (job_t* ji = j; ji != NULL; ji = ji->next) {
             run_job(ji);
+            if(PRINT_INFO && ji != NULL) print_job(ji);
         }
     }
 }
