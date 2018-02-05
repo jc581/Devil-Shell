@@ -7,6 +7,15 @@ void spawn_job(job_t *j, bool fg); /* spawn a new job */
 job_t* first_j = NULL;
 job_t* last_j = NULL;
 
+void sigstop(int p){
+  int pid = getpid();
+  int ppid = getppid();
+  printf("%d %d\n", pid, ppid);
+  fflush(stdout);
+  seize_tty(ppid);
+  kill(pid, SIGTSTP);
+}
+
 /* Sets the process group id for a given job and process */
 int set_child_pgid(job_t *j, process_t *p)
 {
@@ -38,6 +47,7 @@ void new_child(job_t *j, process_t *p, bool fg)
 
          /* Set the handling for job control signals back to the default. */
          signal(SIGTTOU, SIG_DFL);
+//         signal(SIGTSTP, &sigstop);
 }
 
 /* Spawning a process with job control. fg is true if the
@@ -107,15 +117,20 @@ void spawn_job(job_t *j, bool fg)
   }
   if (fg) {
     pid_t t;
+    process_t* child_p;
     int status;
-    while ((t = wait(&status)) > 0) {
-      for (p = j->first_process; p; p = p->next) {
-        if (p->pid == t) {
-          p->status = status;
-          p->completed = true;
-          break;
-        }
+    while ((t = waitpid(-1, &status, WUNTRACED)) > 0) {
+      printf("hanged by %d, status = %d\n", t, status);            
+      for (p = j->first_process; p; p = p->next) if (p->pid == t) child_p = p;
+      if (WIFSTOPPED(status)) {
+        printf("child stopped\n");
+        printf("[%d]+ Stopped    %s", j->pgid, j->commandinfo); 
+        break;
       }
+
+      child_p->status = status;
+      child_p->completed = true;
+
     }
   }
 
@@ -186,8 +201,7 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
 
             // delete_job(j, first_j);
             j->pgid = getpid();
-            int res;
-            res = chdir(argv[1]);
+            chdir(argv[1]);
             return true;
         }
         else if (!strcmp("bg", argv[0])) {
@@ -236,11 +250,46 @@ void append_jobs(job_t* j) {
   }
 }
 
-int main()
+void signal_tstp(int p) {
+  printf("tstp\n");
+  //kill(getpid(), SIGKILL);
+}
+
+void signal_int(int p) {
+  printf("kill\n");
+  kill(getpid(), SIGKILL);
+}
+
+void signal_chld(int p) {
+  signal(SIGTTOU, SIG_IGN);
+  signal(SIGTTIN, SIG_IGN);
+  seize_tty(getpid());
+  printf("current pid:%d\n", getpid());
+  printf("catched stopped\n");
+  printf("current terminal foreground process group: %d\n", tcgetpgrp(STDIN_FILENO));
+  kill(getpid(), SIGCONT);
+}
+
+int main(int argc, char* argv[])
 {
+  signal(SIGTSTP, &signal_tstp);
+  signal(SIGCHLD, &signal_chld);
+  signal(SIGINT, &signal_int);
 
 	init_dsh();
 	DEBUG("Successfully initialized\n");
+
+  int in;
+  if (argc == 2) {
+    printf("file %s\n", argv[1]);
+    if ((in = open(argv[1], O_RDONLY, 0)) < 0) {
+      perror("Couldn't open input file");
+      exit(EXIT_FAILURE);
+    }
+    dup2(in, STDIN_FILENO);
+  }
+
+  printf("%d\n", stdin->_fileno);
 
 	while(1) {
     job_t *j = NULL;
