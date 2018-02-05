@@ -7,14 +7,6 @@ void spawn_job(job_t *j, bool fg); /* spawn a new job */
 job_t* first_j = NULL;
 job_t* last_j = NULL;
 
-void sigstop(int p){
-  int pid = getpid();
-  int ppid = getppid();
-  printf("%d %d\n", pid, ppid);
-  fflush(stdout);
-  seize_tty(ppid);
-  kill(pid, SIGTSTP);
-}
 
 /* Sets the process group id for a given job and process */
 int set_child_pgid(job_t *j, process_t *p)
@@ -47,7 +39,6 @@ void new_child(job_t *j, process_t *p, bool fg)
 
          /* Set the handling for job control signals back to the default. */
          signal(SIGTTOU, SIG_DFL);
-//         signal(SIGTSTP, &sigstop);
 }
 
 /* Spawning a process with job control. fg is true if the
