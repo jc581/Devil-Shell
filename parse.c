@@ -3,7 +3,7 @@
 int isspace(int c); //check whether the char c is a space
 
 /* Initialize the members of job structure */
-bool init_job(job_t *j) 
+bool init_job(job_t *j)
 {
 	j->next = NULL;
 	if(!(j->commandinfo = (char *) calloc(MAX_LEN_CMDLINE,sizeof(char))))
@@ -12,14 +12,14 @@ bool init_job(job_t *j)
 	j->pgid = -1; 	                /* -1 indicates spawn new job*/
 	j->notified = false;
 	j->mystdin = STDIN_FILENO; 	    /* 0 */
-	j->mystdout = STDOUT_FILENO;	/* 1 */ 
+	j->mystdout = STDOUT_FILENO;	/* 1 */
 	j->mystderr = STDERR_FILENO;	/* 2 */
 	j->bg = false;
 	return true;
 }
 
 /* Initialize the members of process structure */
-bool init_process(process_t *p) 
+bool init_process(process_t *p)
 {
 	p->pid = -1;                    /* -1 indicates new process */
 	p->completed = false;
@@ -37,26 +37,26 @@ bool init_process(process_t *p)
 
 /*
  * Reads the process level information in the cases of single process or
- * cmdline with pipelines 
+ * cmdline with pipelines
  *
  */
 
-bool readprocessinfo(process_t *p, char *cmd) 
+bool readprocessinfo(process_t *p, char *cmd)
 {
 
 	int cmd_pos = 0;    /*iterator for command; */
 	int args_pos = 0;   /* iterator for arguments*/
 
 	int argc = 0;
-	
+
 	while (isspace(cmd[cmd_pos])){++cmd_pos;} /* ignore any spaces */
 	if(cmd[cmd_pos] == '\0')
 		return true;
-	
+
 	while(cmd[cmd_pos] != '\0'){
 		if(!(p->argv[argc] = (char *)calloc(MAX_LEN_CMDLINE, sizeof(char))))
 			return false;
-		while(cmd[cmd_pos] != '\0' && !isspace(cmd[cmd_pos])) 
+		while(cmd[cmd_pos] != '\0' && !isspace(cmd[cmd_pos]))
 			p->argv[argc][args_pos++] = cmd[cmd_pos++];
 		p->argv[argc][args_pos] = '\0';
 		args_pos = 0;
@@ -73,12 +73,12 @@ bool readprocessinfo(process_t *p, char *cmd)
  * with arbitrary inputs. Be prepared to hack it for the features
  * you may require. The more complicated cases such as parenthesis
  * and grouping are not supported. If the parser found some error, it
- * will always return NULL. 
+ * will always return NULL.
  *
  * The parser supports these symbols: <, >, |, &, ;
  */
 
-job_t* readcmdline(char *msg) 
+job_t* readcmdline(char *msg)
 {
 
 	fprintf(stdout, "%s", msg);
@@ -113,9 +113,9 @@ job_t* readcmdline(char *msg)
 			return NULL;
 
 		/* Check for invalid special symbols (characters) */
-		if(cmdline[cmdline_pos] == ';' || cmdline[cmdline_pos] == '&' 
-			|| cmdline[cmdline_pos] == '<' || cmdline[cmdline_pos] == '>' || cmdline[cmdline_pos] == '|')
-			return NULL;
+		// if(cmdline[cmdline_pos] == ';' || cmdline[cmdline_pos] == '&' 
+		// 	|| cmdline[cmdline_pos] == '<' || cmdline[cmdline_pos] == '>' || cmdline[cmdline_pos] == '|')
+		// 	return NULL;
 
 		char *cmd = (char *)calloc(MAX_LEN_CMDLINE, sizeof(char));
 		if(!cmd) {
@@ -194,7 +194,7 @@ job_t* readcmdline(char *msg)
 				}
 				valid_input = false;
 				break;
-			
+
 			    case '>': /* output redirection */
 				current_process->ofile = (char *) calloc(MAX_LEN_FILENAME, sizeof(char));
 				if(!current_process->ofile) {
@@ -245,7 +245,7 @@ job_t* readcmdline(char *msg)
 				current_process = current_process->next;
 				++cmdline_pos;
 				cmd_pos = 0; /*Reinitialze for new cmd */
-				valid_input = true;	
+				valid_input = true;
 				break;
 
 			   case '&': /* background job */
@@ -260,7 +260,7 @@ job_t* readcmdline(char *msg)
 				sequence = true;
 				strncpy(current_job->commandinfo,cmdline+seq_pos,cmdline_pos-seq_pos);
 				seq_pos = cmdline_pos + 1;
-				break;	
+				break;
 
 			   case '#': /* comment */
 				end_of_input = true;
@@ -284,7 +284,7 @@ job_t* readcmdline(char *msg)
 				break;
 		}
 		cmd[cmd_pos] = '\0';
-		
+
 		if(!readprocessinfo(current_process, cmd)) {
 			fprintf(stderr,"%s\n","read process info: error");
 			delete_job(current_job,first_job);
