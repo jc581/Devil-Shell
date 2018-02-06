@@ -113,7 +113,7 @@ job_t* readcmdline(char *msg)
 			return NULL;
 
 		/* Check for invalid special symbols (characters) */
-		if(cmdline[cmdline_pos] == ';' || cmdline[cmdline_pos] == '&' 
+		if(cmdline[cmdline_pos] == ';' || cmdline[cmdline_pos] == '&'
 			|| cmdline[cmdline_pos] == '<' || cmdline[cmdline_pos] == '>' || cmdline[cmdline_pos] == '|')
 			return NULL;
 
