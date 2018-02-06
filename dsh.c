@@ -64,6 +64,9 @@ void spawn_job(job_t *j, bool fg)
 
 	  /* YOUR CODE HERE? */
 	  /* Builtin commands are already taken care earlier */
+    int fd[2];
+    pipe(fd);
+    printf("after pipe %d,%d\n", fd[0], fd[1]);
 	  switch (pid = fork()) {
 
       case -1: /* fork failure */
@@ -72,10 +75,25 @@ void spawn_job(job_t *j, bool fg)
 
       case 0: /* child process  */
         p->pid = getpid();
+        // if(p == j->first_process || p->next == NULL){
+        //   new_child(j, p, fg);
+        // }else{
+        //   new_child(j, p, false);
+        // }
         new_child(j, p, fg);
-        int fd[2];
+        if(input != STDIN_FILENO){
+          dup2(input, STDIN_FILENO);
+          close(input);
+        }
+
+        if(p->next != NULL){
+          printf("%d, %d\n", fd[0], fd[1]);
+          close(fd[0]);
+          dup2(fd[1], STDOUT_FILENO);
+          close(fd[1]);
+        }
     /* YOUR CODE HERE?  Child-side code for new process. */
-        if(j->mystdin == INPUT_FD){
+        if(j->mystdin == INPUT_FD && p == j->first_process){
           int in;
           if ((in = open(p->ifile, O_RDONLY, 0)) < 0) {
             perror("Couldn't open input file");
@@ -83,13 +101,14 @@ void spawn_job(job_t *j, bool fg)
           }
           dup2(in, STDIN_FILENO);
           close(in);
-        }else if(j->mystdout == OUTPUT_FD){
+        }
+         
+        if(j->mystdout == OUTPUT_FD && p->next == NULL){
           int out;
           if ((out = creat(p->ofile, 0644)) < 0){
             perror("Couldn't open the output file");
             exit(EXIT_FAILURE);
           }
-          creat(p->ofile, 0644);
           dup2(out, STDOUT_FILENO);
           close(out);
         }
@@ -103,6 +122,18 @@ void spawn_job(job_t *j, bool fg)
         /* establish child process group */
         p->pid = pid;
         set_child_pgid(j, p);
+        if(p->next != NULL){
+          close(fd[1]);
+          if(p != j->first_process){
+            close(input);
+          }
+          input = fd[0];
+          printf("In parent, %d, %d\n", fd[0], fd[1]);
+        }else{
+          close(fd[0]);
+          close(fd[1]);
+          close(input);
+        }
         // printf("%d\n", j->pgid);
         /* YOUR CODE HERE?  Parent-side code for new process.  */
         if (p == j->first_process) {
@@ -288,7 +319,7 @@ int main(int argc, char* argv[])
     dup2(in, STDIN_FILENO);
   }
 
-  printf("%d\n", stdin->_fileno);
+  // printf("%d\n", stdin->_fileno);
 
 	while(1) {
     job_t *j = NULL;
