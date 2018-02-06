@@ -118,7 +118,7 @@ void spawn_job(job_t *j, bool fg)
 	  /* Builtin commands are already taken care earlier */
     int fd[2];
     pipe(fd);
-    printf("after pipe %d,%d\n", fd[0], fd[1]);
+    // printf("after pipe %d,%d\n", fd[0], fd[1]);
 	  switch (pid = fork()) {
 
       case -1: /* fork failure */
@@ -133,19 +133,22 @@ void spawn_job(job_t *j, bool fg)
         //   new_child(j, p, false);
         // }
         new_child(j, p, fg);
+
         if(input != STDIN_FILENO){
           dup2(input, STDIN_FILENO);
           close(input);
         }
 
         if(p->next != NULL){
-          printf("%d, %d\n", fd[0], fd[1]);
+          // printf("%d, %d\n", fd[0], fd[1]);
           close(fd[0]);
           dup2(fd[1], STDOUT_FILENO);
           close(fd[1]);
         }
+
     /* YOUR CODE HERE?  Child-side code for new process. */
-        if(j->mystdin == INPUT_FD && p == j->first_process){
+
+        if(j->mystdin == INPUT_FD && p->ifile != NULL){
           int in;
           if ((in = open(p->ifile, O_RDONLY, 0)) < 0) {
             perror("Couldn't open input file");
@@ -155,7 +158,8 @@ void spawn_job(job_t *j, bool fg)
           close(in);
         }
 
-        if(j->mystdout == OUTPUT_FD && p->next == NULL){
+
+        if(j->mystdout == OUTPUT_FD && p->ofile != NULL && p->next == NULL){
           int out;
           if ((out = open(p->ofile, O_WRONLY | O_APPEND | O_CREAT, 0644)) < 0){
             perror("Couldn't open the output file");
@@ -180,7 +184,7 @@ void spawn_job(job_t *j, bool fg)
         close(fd[1]);
         if(p->next != NULL){
           input = fd[0];
-          printf("In parent, %d, %d\n", fd[0], fd[1]);
+          // printf("In parent, %d, %d\n", fd[0], fd[1]);
         }else{
           close(fd[0]);
         }
@@ -385,7 +389,7 @@ void signal_chld(int signum) {
   int pid;
   process_t* p;
   while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-    printf("pid=%d\n", pid);
+    // printf("pid=%d\n", pid);
     p = find_process(pid);
     if (WIFSTOPPED(status)) p->stopped = true;
     if (WIFEXITED(status)) p->completed = true;
