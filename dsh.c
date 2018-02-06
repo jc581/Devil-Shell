@@ -1,5 +1,6 @@
 #include "dsh.h"
 #include <string.h>
+#include <errno.h>
 void seize_tty(pid_t callingprocess_pgid); /* Grab control of the terminal for the calling process pgid.  */
 void continue_job(job_t *j); /* resume a stopped job */
 void spawn_job(job_t *j, bool fg); /* spawn a new job */
@@ -56,6 +57,8 @@ void spawn_job(job_t *j, bool fg)
 	pid_t pid;
 	process_t *p;
   // printf("%d\n", j->pgid);
+
+  int input = STDIN_FILENO;
 	for(p = j->first_process; p; p = p->next) {
 
 	  /* YOUR CODE HERE? */
@@ -69,6 +72,7 @@ void spawn_job(job_t *j, bool fg)
       case 0: /* child process  */
         p->pid = getpid();
         new_child(j, p, fg);
+        int fd[2];
     /* YOUR CODE HERE?  Child-side code for new process. */
         if(j->mystdin == INPUT_FD){
           int in;
@@ -188,6 +192,9 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
             j->pgid = getpid();
             int res;
             res = chdir(argv[1]);
+            if(res){
+              perror("Error deteced when changing directory");
+            }
             return true;
         }
         else if (!strcmp("bg", argv[0])) {

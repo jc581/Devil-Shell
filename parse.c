@@ -113,9 +113,9 @@ job_t* readcmdline(char *msg)
 			return NULL;
 
 		/* Check for invalid special symbols (characters) */
-		// if(cmdline[cmdline_pos] == ';' || cmdline[cmdline_pos] == '&' 
-		// 	|| cmdline[cmdline_pos] == '<' || cmdline[cmdline_pos] == '>' || cmdline[cmdline_pos] == '|')
-		// 	return NULL;
+		if(cmdline[cmdline_pos] == ';' || cmdline[cmdline_pos] == '&' 
+			|| cmdline[cmdline_pos] == '<' || cmdline[cmdline_pos] == '>' || cmdline[cmdline_pos] == '|')
+			return NULL;
 
 		char *cmd = (char *)calloc(MAX_LEN_CMDLINE, sizeof(char));
 		if(!cmd) {
