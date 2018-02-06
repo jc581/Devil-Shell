@@ -154,10 +154,10 @@ void spawn_job(job_t *j, bool fg)
           dup2(in, STDIN_FILENO);
           close(in);
         }
-         
+
         if(j->mystdout == OUTPUT_FD && p->next == NULL){
           int out;
-          if ((out = creat(p->ofile, 0644)) < 0){
+          if ((out = open(p->ofile, O_WRONLY | O_APPEND | O_CREAT, 0644)) < 0){
             perror("Couldn't open the output file");
             exit(EXIT_FAILURE);
           }
@@ -174,17 +174,15 @@ void spawn_job(job_t *j, bool fg)
         /* establish child process group */
         p->pid = pid;
         set_child_pgid(j, p);
+        if(p != j->first_process){
+          close(input);
+        }
+        close(fd[1]);
         if(p->next != NULL){
-          close(fd[1]);
-          if(p != j->first_process){
-            close(input);
-          }
           input = fd[0];
           printf("In parent, %d, %d\n", fd[0], fd[1]);
         }else{
           close(fd[0]);
-          close(fd[1]);
-          close(input);
         }
         // printf("%d\n", j->pgid);
         /* YOUR CODE HERE?  Parent-side code for new process.  */
@@ -226,7 +224,7 @@ void delete_completed_job() {
   for(j = first_j; j;) {
     j_next = j->next;
     if(job_is_completed(j)) {
-      stable_delete_job(j); 
+      stable_delete_job(j);
     }
     j = j_next;
   }
@@ -316,7 +314,7 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
             }
             wait_job(find_job(pgid));
             seize_tty(getpid());
-            stable_delete_job(j); 
+            stable_delete_job(j);
             return true;
         }
         return false;       /* not a builtin command */
