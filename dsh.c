@@ -5,9 +5,61 @@ void seize_tty(pid_t callingprocess_pgid); /* Grab control of the terminal for t
 void continue_job(job_t *j); /* resume a stopped job */
 void spawn_job(job_t *j, bool fg); /* spawn a new job */
 
+void stable_delete_job(job_t* j);
 job_t* first_j = NULL;
 job_t* last_j = NULL;
 
+process_t* find_process(pid_t pid) {
+  job_t* j;
+  process_t* p;
+  for (j = first_j; j; j = j->next) {
+    for (p = j->first_process; p; p = p->next) {
+      if (p->pid == pid) return p;
+    }
+  }
+  perror("Cannot find process");
+  exit(EXIT_FAILURE);
+}
+
+job_t* find_job(pid_t pgid) {
+  job_t* j;
+  for (j = first_j; j; j = j->next) {
+    if (j->pgid == pgid) return j;
+  }
+  perror("Cannot find job");
+  exit(EXIT_FAILURE);
+}
+
+job_t* find_stopped_job() {
+  job_t* j;
+  for (j = first_j; j; j = j->next) {
+    if (job_is_stopped(j)) return j;
+  }
+  return NULL;
+}
+
+void wait_job(job_t* j) {
+  pid_t t;
+  process_t* child_p;
+  process_t* p;
+  int status;
+  while ((t = waitpid(-j->pgid, &status, WUNTRACED)) > 0) {
+    printf("hanged by %d, status = %d\n", t, status);
+    for (p = j->first_process; p; p = p->next) if (p->pid == t) child_p = p;
+    if (WIFSTOPPED(status)) {
+      printf("child stopped\n");
+      printf("[%d]+ Stopped    %s\n", j->pgid, j->commandinfo);
+      child_p -> status = status;
+      child_p -> stopped = true;
+      child_p -> completed = false;
+      break;
+    }
+
+    child_p->status = status;
+    child_p->completed = true;
+    child_p->stopped = false;
+  }
+}
 
 /* Sets the process group id for a given job and process */
 int set_child_pgid(job_t *j, process_t *p)
@@ -111,22 +163,7 @@ void spawn_job(job_t *j, bool fg)
     }
   }
   if (fg) {
-    pid_t t;
-    process_t* child_p;
-    int status;
-    while ((t = waitpid(-1, &status, WUNTRACED)) > 0) {
-      printf("hanged by %d, status = %d\n", t, status);
-      for (p = j->first_process; p; p = p->next) if (p->pid == t) child_p = p;
-      if (WIFSTOPPED(status)) {
-        printf("child stopped\n");
-        printf("[%d]+ Stopped    %s", j->pgid, j->commandinfo);
-        break;
-      }
-
-      child_p->status = status;
-      child_p->completed = true;
-
-    }
+    wait_job(j);
   }
 
             /* YOUR CODE HERE?  Parent-side code for new job.*/
@@ -158,7 +195,7 @@ void delete_completed_job() {
   for(j = first_j; j;) {
     j_next = j->next;
     if(job_is_completed(j)) {
-      delete_job(j, first_j);
+      stable_delete_job(j); 
     }
     j = j_next;
   }
@@ -187,7 +224,7 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
 	      }
         else if (!strcmp("jobs", argv[0])) {
             /* Your code here */
-            delete_job(j, first_j);
+            stable_delete_job(j);
             list_jobs();
             return true;
         }
@@ -201,21 +238,67 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
             if(res){
               perror("Error deteced when changing directory");
             }
+            stable_delete_job(j);
             return true;
         }
         else if (!strcmp("bg", argv[0])) {
             /* Your code here */
-            delete_job(j, first_j);
+            pid_t pgid = -1;
+            if (argc == 2) {
+              pgid = (pid_t)atoi(argv[1]);
+            } else if (argc == 1) {
+              job_t* j_stopped = find_stopped_job();
+              if (j_stopped) pgid = j_stopped->pgid;
+            } else {
+              perror("too many arguments for bg");
+              exit(EXIT_FAILURE);
+            }
+            if (kill( -pgid, SIGCONT) < 0)
+              perror("kill (SIGCONT)");
+            process_t* p;
+            for (p = find_job(pgid)->first_process; p; p = p->next) {
+              p->stopped = false;
+            }
+            stable_delete_job(j);
             return true;
         }
         else if (!strcmp("fg", argv[0])) {
             /* Your code here */
-            pid_t jid = (pid_t)atoi(argv[1]);
-            seize_tty(jid);
-            delete_job(j, first_j);
+            pid_t pgid = -1;
+            if (argc == 2) {
+              pgid = (pid_t)atoi(argv[1]);
+            } else if (argc == 1) {
+              job_t* j_stopped = find_stopped_job();
+              if (j_stopped) pgid = j_stopped->pgid;
+            } else {
+              perror("too many arguments for fg");
+              exit(EXIT_FAILURE);
+            }
+            if (pgid == -1) return true;
+            //printf("%d\n", pgid);
+            seize_tty(pgid);
+            if (kill( -pgid, SIGCONT) < 0)
+              perror("kill (SIGCONT)");
+            process_t* p;
+            for (p = find_job(pgid)->first_process; p; p = p->next) {
+              p->stopped = false;
+            }
+            wait_job(find_job(pgid));
+            seize_tty(getpid());
+            stable_delete_job(j); 
             return true;
         }
         return false;       /* not a builtin command */
+}
+
+void stable_delete_job(job_t* j) {
+  if (j == first_j) {
+    job_t* j_next = j->next;
+    delete_job(j, first_j);
+    first_j = j_next;
+  } else {
+    delete_job(j, first_j);
+  }
 }
 
 /* Build prompt messaage */
@@ -259,21 +342,33 @@ void signal_int(int p) {
   kill(getpid(), SIGKILL);
 }
 
-void signal_chld(int p) {
-  signal(SIGTTOU, SIG_IGN);
-  signal(SIGTTIN, SIG_IGN);
-  seize_tty(getpid());
-  printf("current pid:%d\n", getpid());
-  printf("catched stopped\n");
-  printf("current terminal foreground process group: %d\n", tcgetpgrp(STDIN_FILENO));
-  kill(getpid(), SIGCONT);
+void signal_chld(int signum) {
+  //signal(SIGTTOU, SIG_IGN);
+  //signal(SIGTTIN, SIG_IGN);
+  //seize_tty(getpid());
+  //printf("signum: %d\n", signum);
+  //printf("current pid:%d\n", getpid());
+  //printf("catched stopped\n");
+  //printf("current terminal foreground process group: %d\n", tcgetpgrp(STDIN_FILENO));
+  //kill(getpid(), SIGCONT);
+
+  int status;
+  int pid;
+  process_t* p;
+  while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+    printf("pid=%d\n", pid);
+    p = find_process(pid);
+    if (WIFSTOPPED(status)) p->stopped = true;
+    if (WIFEXITED(status)) p->completed = true;
+    if (WIFCONTINUED(status)) p->stopped = false;
+  }
 }
 
 int main(int argc, char* argv[])
 {
-  signal(SIGTSTP, &signal_tstp);
+  //signal(SIGTSTP, &signal_tstp);
   signal(SIGCHLD, &signal_chld);
-  signal(SIGINT, &signal_int);
+  //signal(SIGINT, &signal_int);
 
 	init_dsh();
 	DEBUG("Successfully initialized\n");
@@ -318,7 +413,7 @@ int main(int argc, char* argv[])
             // printf("%ld\n", (long)ji->pgid);
             run_job(ji);
             // printf("%ld\n", (long)ji->pgid);
-            if(PRINT_INFO && ji != NULL) print_job(ji);
+            //if(PRINT_INFO && ji != NULL) print_job(ji);
         }
     }
 }
