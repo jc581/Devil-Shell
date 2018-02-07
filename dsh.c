@@ -113,7 +113,6 @@ void spawn_job(job_t *j, bool fg)
 
 	pid_t pid;
 	process_t *p;
-  // printf("%d\n", j->pgid);
 
   int input = STDIN_FILENO;
 	for(p = j->first_process; p; p = p->next) {
@@ -122,7 +121,6 @@ void spawn_job(job_t *j, bool fg)
 	  /* Builtin commands are already taken care earlier */
     int fd[2];
     pipe(fd);
-    // printf("after pipe %d,%d\n", fd[0], fd[1]);
 	  switch (pid = fork()) {
 
       case -1: /* fork failure */
@@ -131,11 +129,6 @@ void spawn_job(job_t *j, bool fg)
 
       case 0: /* child process  */
         p->pid = getpid();
-        // if(p == j->first_process || p->next == NULL){
-        //   new_child(j, p, fg);
-        // }else{
-        //   new_child(j, p, false);
-        // }
         new_child(j, p, fg);
 
         if(input != STDIN_FILENO){
@@ -144,7 +137,6 @@ void spawn_job(job_t *j, bool fg)
         }
 
         if(p->next != NULL){
-          // printf("%d, %d\n", fd[0], fd[1]);
           close(fd[0]);
           dup2(fd[1], STDOUT_FILENO);
           close(fd[1]);
@@ -188,11 +180,9 @@ void spawn_job(job_t *j, bool fg)
         close(fd[1]);
         if(p->next != NULL){
           input = fd[0];
-          // printf("In parent, %d, %d\n", fd[0], fd[1]);
         }else{
           close(fd[0]);
         }
-        // printf("%d\n", j->pgid);
         /* YOUR CODE HERE?  Parent-side code for new process.  */
         if (p == j->first_process) {
           fprintf(stdout, "%d(Lanuched): %s\n", j->pgid, j->commandinfo);
@@ -269,7 +259,6 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
         else if (!strcmp("cd", argv[0])) {
             /* Your code here */
 
-            // delete_job(j, first_j);
             j->pgid = getpid();
             int res;
             res = chdir(argv[1]);
@@ -313,7 +302,6 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
               exit(EXIT_FAILURE);
             }
             if (pgid == -1) return true;
-            //printf("%d\n", pgid);
             seize_tty(pgid);
             if (kill( -pgid, SIGCONT) < 0)
               perror("kill (SIGCONT)");
@@ -370,31 +358,13 @@ void append_jobs(job_t* j) {
   }
 }
 
-void signal_tstp(int p) {
-  printf("tstp\n");
-  //kill(getpid(), SIGKILL);
-}
-
-void signal_int(int p) {
-  printf("kill\n");
-  kill(getpid(), SIGKILL);
-}
-
 void signal_chld(int signum) {
-  //signal(SIGTTOU, SIG_IGN);
-  //signal(SIGTTIN, SIG_IGN);
-  //seize_tty(getpid());
-  //printf("signum: %d\n", signum);
-  //printf("current pid:%d\n", getpid());
-  //printf("catched stopped\n");
-  //printf("current terminal foreground process group: %d\n", tcgetpgrp(STDIN_FILENO));
-  //kill(getpid(), SIGCONT);
-
   int status;
   int pid;
   process_t* p;
-  while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-    // printf("pid=%d\n", pid);
+  pid = waitpid(-1, &status, WNOHANG | WUNTRACED | WCONTINUED);
+    
+  if (pid > 0) {
     p = find_process(pid);
     if (WIFSTOPPED(status)) p->stopped = true;
     if (WIFEXITED(status)) p->completed = true;
@@ -421,14 +391,11 @@ void free_the_program() {
 
 int main(int argc, char* argv[])
 {
-  //signal(SIGTSTP, &signal_tstp);
   signal(SIGCHLD, &signal_chld);
-  //signal(SIGINT, &signal_int);
 
 	init_dsh();
 	DEBUG("Successfully initialized\n");
 
-  // printf("%d\n", stdin->_fileno);
 
 	while(1) {
     job_t *j = NULL;
@@ -458,12 +425,9 @@ int main(int argc, char* argv[])
         append_jobs(j);
         job_t* j_next;
         for (job_t* ji = j; ji != NULL; ) {
-            // printf("%ld\n", (long)ji->pgid);
             j_next = ji->next;
             run_job(ji);
             ji = j_next;
-            // printf("%ld\n", (long)ji->pgid);
-            //if(PRINT_INFO && ji != NULL) print_job(ji);
         }
     }
 }
