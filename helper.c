@@ -54,13 +54,17 @@ bool free_job(job_t *j)
 		return true;
 	free(j->commandinfo);
 	process_t *p;
-	for(p = j->first_process; p; p = p->next) {
+	process_t *p_next;
+	for(p = j->first_process; p;) {
 		int i;
+		p_next = p->next;
 		for(i = 0; i < p->argc; i++)
 			free(p->argv[i]);
 		free(p->argv);
         	free(p->ifile);
         	free(p->ofile);
+		free(p);
+		p = p_next;
 	}
 	free(j);
 	return true;

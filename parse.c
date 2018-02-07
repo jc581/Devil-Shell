@@ -288,14 +288,18 @@ job_t* readcmdline(char *msg)
 		if(!readprocessinfo(current_process, cmd)) {
 			fprintf(stderr,"%s\n","read process info: error");
 			delete_job(current_job,first_job);
+			free(cmd);
             		return NULL;
         	}
+		free(cmd);
 		if(!sequence) {
 			strncpy(current_job->commandinfo,cmdline+seq_pos,cmdline_pos-seq_pos);
 			break;
 		}
 		sequence = false;
 		++cmdline_pos;
+		free(cmd);
 	}
+	free(cmdline);	
 	return first_job;
 }

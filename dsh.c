@@ -5,6 +5,10 @@ void seize_tty(pid_t callingprocess_pgid); /* Grab control of the terminal for t
 void continue_job(job_t *j); /* resume a stopped job */
 void spawn_job(job_t *j, bool fg); /* spawn a new job */
 
+bool free_job(job_t*);
+
+void free_the_program();
+
 void stable_delete_job(job_t* j);
 job_t* first_j = NULL;
 job_t* last_j = NULL;
@@ -44,7 +48,7 @@ void wait_job(job_t* j) {
   process_t* p;
   int status;
   while ((t = waitpid(-j->pgid, &status, WUNTRACED)) > 0) {
-    printf("hanged by %d, status = %d\n", t, status);
+    //printf("hanged by %d, status = %d\n", t, status);
     for (p = j->first_process; p; p = p->next) if (p->pid == t) child_p = p;
     if (WIFSTOPPED(status)) {
       printf("child stopped\n");
@@ -253,6 +257,7 @@ bool builtin_cmd(job_t *last_job, int argc, char **argv)
         job_t* j = last_job;
         if (!strcmp(argv[0], "quit")) {
             /* Your code here */
+            free_the_program();
             exit(EXIT_SUCCESS);
 	      }
         else if (!strcmp("jobs", argv[0])) {
@@ -339,7 +344,7 @@ char* promptmsg()
 {
     /* Modify this to include pid */
 	static char buffer[20];
-	sprintf(buffer, "dsh-%d$ ", getpid());
+	if (isatty(STDIN_FILENO)) sprintf(buffer, "dsh-%d$ ", getpid());
 	return buffer;
 }
 
@@ -397,6 +402,23 @@ void signal_chld(int signum) {
   }
 }
 
+void free_the_program() {
+  job_t* j;
+  process_t* p;
+  job_t* j_next;
+  for( j = first_j; j != NULL; ) {
+    j_next = j->next;
+    if (job_is_completed(j)) free_job(j);
+    else {
+      for (p = j->first_process; p != NULL && p->pid != -1; p = p->next) {
+      	printf("pid: %d\n", p->pid); kill(p->pid, SIGKILL);
+      }
+      free_job(j);
+    }
+    j = j_next;
+  }
+}
+
 int main(int argc, char* argv[])
 {
   //signal(SIGTSTP, &signal_tstp);
@@ -406,16 +428,6 @@ int main(int argc, char* argv[])
 	init_dsh();
 	DEBUG("Successfully initialized\n");
 
-  int in;
-  if (argc == 2) {
-    printf("file %s\n", argv[1]);
-    if ((in = open(argv[1], O_RDONLY, 0)) < 0) {
-      perror("Couldn't open input file");
-      exit(EXIT_FAILURE);
-    }
-    dup2(in, STDIN_FILENO);
-  }
-
   // printf("%d\n", stdin->_fileno);
 
 	while(1) {
@@ -424,6 +436,8 @@ int main(int argc, char* argv[])
 			if (feof(stdin)) { /* End of file (ctrl-d) */
 				fflush(stdout);
 				printf("\n");
+        free_job(j);
+        free_the_program();
 				exit(EXIT_SUCCESS);
       }
 			continue; /* NOOP; user entered return or spaces with return */
@@ -442,9 +456,12 @@ int main(int argc, char* argv[])
             /* else */
             /* spawn_job(j,false) */
         append_jobs(j);
-        for (job_t* ji = j; ji != NULL; ji = ji->next) {
+        job_t* j_next;
+        for (job_t* ji = j; ji != NULL; ) {
             // printf("%ld\n", (long)ji->pgid);
+            j_next = ji->next;
             run_job(ji);
+            ji = j_next;
             // printf("%ld\n", (long)ji->pgid);
             //if(PRINT_INFO && ji != NULL) print_job(ji);
         }
